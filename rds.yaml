@@ -1,0 +1,62 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: Create VPC, Subnets, Security Groups, RDS MySQL Instance, Secrets Manager Secrets, and IAM Role
+
+Resources:
+  DBSubnetGroup:
+    Type: AWS::RDS::DBSubnetGroup
+    Properties:
+      DBSubnetGroupDescription: "Subnets available for RDS instance"
+      SubnetIds:
+        - !ImportValue PrivateSubnet1
+        - !ImportValue PrivateSubnet2
+      DBSubnetGroupName: MyDBSubnetGroup
+      Tags:
+        - Key: Name
+          Value: MyDBSubnetGroup
+
+  MyKMSKey:
+    Type: AWS::KMS::Key
+    Properties:
+      Description: "KMS key for encrypting RDS MySQL instance"
+      EnableKeyRotation: true
+      KeyPolicy:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              AWS: !Sub "arn:aws:iam::${AWS::AccountId}:root"
+            Action: "kms:*"
+            Resource: "*"
+
+  RDSSecrets:
+    Type: AWS::SecretsManager::Secret
+    Properties:
+      Name: MyRDSSecret
+      Description: "Credentials for MySQL RDS instance"
+      GenerateSecretString:
+        SecretStringTemplate: '{"username": "admin"}'
+        GenerateStringKey: "password"
+        PasswordLength: 16
+        ExcludeCharacters: '/@" '
+
+  MyDBInstance:
+    Type: AWS::RDS::DBInstance
+    Properties:
+      DBInstanceClass: db.t3.micro
+      AllocatedStorage: 20
+      DBName: MyDatabase
+      Engine: MySQL
+      MasterUsername: !Join ['', ['{{resolve:secretsmanager:', !Ref RDSSecrets, ':SecretString:username}}']]
+      MasterUserPassword: !Join ['', ['{{resolve:secretsmanager:', !Ref RDSSecrets, ':SecretString:password}}']]
+      StorageEncrypted: true
+      KmsKeyId: !Ref MyKMSKey
+      MultiAZ: true
+      VPCSecurityGroups:
+        - !ImportValue DatabaseSecurityGroup
+      DBSubnetGroupName: !Ref DBSubnetGroup
+
+Outputs:
+  RDSSecretArn:
+    Value: !Ref RDSSecrets
+    Export:
+      Name: MyRDSSecretArn

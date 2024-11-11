@@ -1,0 +1,63 @@
+Resources:
+  # WAF WebACL defines the rules for monitoring and filtering traffic to the EC2 instance or API Gateway
+  MyWAFWebACL:
+    Type: AWS::WAFv2::WebACL
+    Properties:
+      Name: EcommercePlatformWAF
+      Scope: REGIONAL  # Scope can be REGIONAL or CLOUDFRONT, depending on where it's applied
+      DefaultAction:
+        Allow: {}  # Allow requests by default unless blocked by a rule
+      VisibilityConfig:
+        CloudWatchMetricsEnabled: true
+        MetricName: MyWAFWebACL  # Metrics sent to CloudWatch
+        SampledRequestsEnabled: true  # Enable sampled requests for visibility
+
+      Rules:
+        # AWS Managed Rule for SQL Injection
+        - Name: AWSManagedRulesSQLiRuleSet
+          Priority: 1  # Priority for rule execution
+          Statement:
+            ManagedRuleGroupStatement:
+              VendorName: AWS
+              Name: AWSManagedRulesSQLiRuleSet  # SQL Injection Protection
+          OverrideAction:
+            None: {}  # Use the default action of the rule group
+          VisibilityConfig:
+            CloudWatchMetricsEnabled: true
+            MetricName: SQLiRuleSet  # CloudWatch metric for SQLi rule
+            SampledRequestsEnabled: true
+
+        # AWS Managed Common Rule Set (e.g., XSS protection, etc.)
+        - Name: AWSManagedRulesCommonRuleSet
+          Priority: 2
+          Statement:
+            ManagedRuleGroupStatement:
+              VendorName: AWS
+              Name: AWSManagedRulesCommonRuleSet
+          OverrideAction:
+            None: {}
+          VisibilityConfig:
+            CloudWatchMetricsEnabled: true
+            MetricName: CommonRuleSet  # CloudWatch metric for common rules
+            SampledRequestsEnabled: true
+
+        # Custom Rate Limiting Rule to Block requests exceeding 1000 per IP
+        - Name: RateLimitRule
+          Priority: 3  # Executed after managed rules
+          Statement:
+            RateBasedStatement:
+              Limit: 1000  # Set the rate limit to 1000 requests per IP
+              AggregateKeyType: IP  # Aggregate the rate limit by IP
+          Action:
+            Block: {}  # Block IPs exceeding the limit
+          VisibilityConfig:
+            CloudWatchMetricsEnabled: true
+            MetricName: RateLimitRule  # CloudWatch metric for rate limiting
+            SampledRequestsEnabled: true
+
+  # Association of WAF WebACL with the Application Load Balancer (ALB)
+  WAFALBAssociation:
+    Type: AWS::WAFv2::WebACLAssociation
+    Properties:
+      ResourceArn: !GetAtt ApplicationLoadBalancer.Arn  # Replace with the ALB's ARN
+      WebACLArn: !GetAtt MyWAFWebACL.Arn  # Reference the WebACL created above
